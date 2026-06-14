@@ -59,7 +59,7 @@ canvas{border-radius:10px;display:block;}
 <div id="home">
   <div id="homeHeader">
     <h1>&#x1F3AE; FLAPPY GAMES</h1>
-    <span class="version">v2.1</span>
+    <span class="version">v2.2</span>
   </div>
   <div id="homeTabs">
     <div class="htab active" id="tab-play" onclick="showTab('play')">PLAY</div>
@@ -119,7 +119,13 @@ canvas{border-radius:10px;display:block;}
     <!-- UPDATES TAB -->
     <div id="tabUpdates" style="display:none;">
       <div class="update-card">
-        <div class="udate">v2.1 &mdash; Latest</div>
+        <div class="udate">v2.2 &mdash; Latest</div>
+        <div class="utitle">Flappy House Fixed</div>
+        <div class="ubody">Completely rebuilt tornado and lightning obstacles. Tornadoes now have their tip at the gap edge so you can fly through cleanly. Lightning clouds sit flush at the pipe edge with the bolt pointing inward. No more impossible gaps!</div>
+        <span class="utag tag-fix">BUG FIX</span>
+      </div>
+      <div class="update-card">
+        <div class="udate">v2.1</div>
         <div class="utitle">Hitbox Fixes</div>
         <div class="ubody">Fixed collision detection on every level. Lollipop, flower and hive sticks are now thin hitboxes matching the visuals. Jellyfish dome is safe to fly over. Tornado collision matches the funnel shape. Lightning only hurts near the cloud. No more dying without touching anything!</div>
         <span class="utag tag-fix">BUG FIX</span>
@@ -456,78 +462,89 @@ function drawCarrot(cx,cy,r){
 }
 
 
-function drawTornado(cx,topY,pointDown){
-  ctx.save();ctx.translate(cx,topY);
-  if(!pointDown) ctx.scale(1,-1);
-  // Funnel shape - wide at top, narrow at bottom
+// topTip=true: funnel wide at top (y=0), tip points DOWN toward gap
+// topTip=false: funnel wide at bottom (y=0 is gap edge), tip points UP away from gap
+function drawTornado(cx, gapEdgeY, topTip){
   var t=Date.now()/200;
-  var layers=8;
+  var layers=10;
+  var layerH=7;
+  // top tornado: wide at gapEdgeY-layers*layerH, tip at gapEdgeY
+  // bot tornado: wide at gapEdgeY+layers*layerH, tip at gapEdgeY
+  ctx.save();ctx.translate(cx,gapEdgeY);
+  if(!topTip) ctx.scale(1,-1); // flip so tip is always at y=0 (gap edge)
   for(var i=0;i<layers;i++){
-    var frac=i/layers;
-    var w=28*(1-frac*0.75);
-    var y=i*7;
-    var wobble=Math.sin(t+i*0.7)*4*frac;
-    var alpha=0.5+frac*0.3;
-    var grad=ctx.createLinearGradient(cx-w,0,cx+w,0);
-    grad.addColorStop(0,'rgba(100,116,139,'+alpha+')');
-    grad.addColorStop(0.4,'rgba(148,163,184,'+(alpha+0.2)+')');
-    grad.addColorStop(0.6,'rgba(148,163,184,'+(alpha+0.2)+')');
-    grad.addColorStop(1,'rgba(100,116,139,'+alpha+')');
-    ctx.fillStyle=grad;
-    ctx.beginPath();ctx.ellipse(wobble,y,w,5,0,0,Math.PI*2);ctx.fill();
+    var frac=i/layers; // 0=tip, 1=wide end
+    var w=6+26*frac; // tip=6, wide=32
+    var y=-(i+1)*layerH; // draw upward from gap edge
+    var wobble=Math.sin(t+i*0.8)*(3*frac);
+    var alpha=0.35+frac*0.45;
+    ctx.fillStyle='rgba(148,163,184,'+alpha+')';
+    ctx.beginPath();ctx.ellipse(wobble,y,w,4.5,0,0,Math.PI*2);ctx.fill();
+    // darker outline
+    ctx.strokeStyle='rgba(71,85,105,'+(alpha*0.6)+')';ctx.lineWidth=0.8;ctx.stroke();
   }
-  // Spinning debris around funnel
-  for(var d=0;d<6;d++){
-    var da=t*2+d*Math.PI*2/6;
-    var dr=16*(1-d/6*0.5);
-    var dy=d*8;
-    var ds=2-d*0.1;
-    ctx.fillStyle='rgba(71,85,105,0.8)';
-    ctx.beginPath();ctx.arc(Math.cos(da)*dr,dy+Math.sin(da)*4,ds,0,Math.PI*2);ctx.fill();
+  // Spinning debris near wide end
+  for(var d=0;d<5;d++){
+    var da=t*2.5+d*Math.PI*2/5;
+    var dFrac=0.6+d*0.08;
+    var dr=20*dFrac;
+    var dy=-(layers*0.7+d)*layerH;
+    ctx.fillStyle='rgba(100,116,139,0.7)';
+    ctx.beginPath();ctx.arc(Math.cos(da)*dr,dy,1.5,0,Math.PI*2);ctx.fill();
   }
-  // Tip glow
-  ctx.beginPath();ctx.arc(Math.sin(t*3)*2,layers*7,3,0,Math.PI*2);
-  ctx.fillStyle='rgba(226,232,240,0.6)';ctx.fill();
+  // Tip glow at gap edge
+  ctx.beginPath();ctx.arc(0,0,4,0,Math.PI*2);
+  ctx.fillStyle='rgba(226,232,240,0.5)';ctx.fill();
   ctx.restore();
 }
 
-function drawLightningBolt(x,y,h){
+// gapEdgeY: the y position of the gap edge (top or bottom)
+// fromTop: true=cloud hangs down from top pipe, false=cloud sits on bottom pipe
+function drawLightningBolt(cx, gapEdgeY, fromTop){
   ctx.save();
-  var cx2=x+PIPE_W/2;
-  // Dark cloud background
   var t=Date.now()/150;
-  var flash=Math.sin(t*8)>0.85?1:0;
-  // Cloud body
+  var flash=Math.sin(t*8)>0.85;
+  // Cloud sits right at the gap edge, bulging away from gap
+  var cloudY=fromTop?gapEdgeY-18:gapEdgeY+18; // cloud centre
+  var dir=fromTop?-1:1; // -1 = cloud body goes up, 1 = goes down
   ctx.fillStyle=flash?'#475569':'#1e293b';
   ctx.beginPath();
-  ctx.arc(cx2-12,y+(h>100?30:h/2),16,0,Math.PI*2);
-  ctx.arc(cx2+2,y+(h>100?22:h/2-8),20,0,Math.PI*2);
-  ctx.arc(cx2+18,y+(h>100?30:h/2),14,0,Math.PI*2);
+  ctx.arc(cx-14,cloudY+dir*8,16,0,Math.PI*2);
+  ctx.arc(cx,cloudY,20,0,Math.PI*2);
+  ctx.arc(cx+16,cloudY+dir*6,14,0,Math.PI*2);
   ctx.fill();
-  ctx.fillStyle=flash?'#64748b':'#334155';
+  ctx.fillStyle=flash?'#64748b':'#2d3f55';
   ctx.beginPath();
-  ctx.arc(cx2,y+(h>100?18:h/2-12),18,0,Math.PI*2);
-  ctx.arc(cx2-10,y+(h>100?28:h/2),12,0,Math.PI*2);
+  ctx.arc(cx-6,cloudY+dir*14,12,0,Math.PI*2);
+  ctx.arc(cx+8,cloudY+dir*12,10,0,Math.PI*2);
   ctx.fill();
-  // Lightning bolt zigzag
-  var by2=y+(h>100?45:h*0.6);
-  ctx.strokeStyle=flash?'#fef08a':'rgba(254,240,138,0.7)';
-  ctx.lineWidth=flash?3:2;ctx.lineCap='round';ctx.lineJoin='round';
-  ctx.shadowColor='#fef08a';ctx.shadowBlur=flash?15:5;
+  // Flash glow on cloud
+  if(flash){
+    ctx.save();ctx.globalAlpha=0.25;
+    ctx.fillStyle='#fef08a';ctx.beginPath();ctx.arc(cx,cloudY,24,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+  // Lightning bolt — hangs from bottom of top cloud, or sticks up from top of bottom cloud
+  var boltStartY=fromTop?gapEdgeY-4:gapEdgeY+4;
+  var boltDir=fromTop?1:-1; // bolt points toward gap
+  ctx.strokeStyle=flash?'#fef08a':'rgba(254,240,138,0.65)';
+  ctx.lineWidth=flash?3:1.8;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.shadowColor='#fef08a';ctx.shadowBlur=flash?18:6;
   ctx.beginPath();
-  ctx.moveTo(cx2+2,by2);
-  ctx.lineTo(cx2-6,by2+14);
-  ctx.lineTo(cx2+2,by2+14);
-  ctx.lineTo(cx2-8,by2+32);
+  ctx.moveTo(cx+2,boltStartY);
+  ctx.lineTo(cx-7,boltStartY+boltDir*14);
+  ctx.lineTo(cx+1,boltStartY+boltDir*14);
+  ctx.lineTo(cx-9,boltStartY+boltDir*30);
   ctx.stroke();
   ctx.shadowBlur=0;
-  // Rain drops below cloud
-  ctx.strokeStyle='rgba(147,197,253,0.5)';ctx.lineWidth=1;
-  var rainT=(Date.now()/80)%20;
+  // Rain streaks away from gap
+  ctx.strokeStyle='rgba(147,197,253,0.45)';ctx.lineWidth=1;
+  var rainT=(Date.now()/80)%18;
   for(var ri=-2;ri<=2;ri++){
-    var rx2=cx2+ri*7;var ry2=y+(h>100?50:h*0.7)+rainT;
-    ctx.beginPath();ctx.moveTo(rx2,ry2);ctx.lineTo(rx2-1,ry2+6);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(rx2,ry2+12);ctx.lineTo(rx2-1,ry2+18);ctx.stroke();
+    var rx=cx+ri*7;
+    var ryStart=fromTop?cloudY+dir*28+rainT:cloudY+dir*28-rainT;
+    ctx.beginPath();ctx.moveTo(rx,ryStart);ctx.lineTo(rx-1,ryStart+dir*7);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(rx+2,ryStart+dir*11);ctx.lineTo(rx+1,ryStart+dir*18);ctx.stroke();
   }
   ctx.restore();
 }
@@ -979,8 +996,13 @@ house:{
   },
   drawObstacle:function(p){
     var botY=p.topH+GAP,cx2=p.x+PIPE_W/2;
-    if(p.type==='tornado'){drawTornado(cx2,p.topH,true);drawTornado(cx2,botY,false);}
-    else{drawLightningBolt(p.x,0,p.topH);drawLightningBolt(p.x,botY,H-60-botY);}
+    if(p.type==='tornado'){
+      drawTornado(cx2,p.topH,true);   // tip at p.topH, funnel goes up
+      drawTornado(cx2,botY,false);    // tip at botY, funnel goes down
+    } else {
+      drawLightningBolt(cx2,p.topH,true);   // cloud above gap, bolt points down
+      drawLightningBolt(cx2,botY,false);    // cloud below gap, bolt points up
+    }
   },
   drawBg:function(){
     var sky=ctx.createLinearGradient(0,0,0,H-60);sky.addColorStop(0,'#0f172a');sky.addColorStop(0.4,'#1e3a5f');sky.addColorStop(1,'#374151');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H-60);
@@ -1118,30 +1140,29 @@ function update(){
       hit=vstalkHit||vTopHit||vBotHit;
     } else if(currentTheme==='house'){
       if(p.type==='tornado'){
-        // Top tornado: drawn at p.topH, funnel wide at top, tip at p.topH+56
-        // 8 layers * 7px = 56px tall. Width at layer i: 28*(1-i/8*0.75)
-        // Only collide inside the funnel region
-        if(by+br>p.topH&&by-br<p.topH+56){
-          var depth=by-p.topH; // 0=top(wide), 56=tip(narrow)
-          var frac=Math.max(0,Math.min(1,depth/56));
-          var topW=28*(1-frac*0.75)+6;
-          if(bx+br>cx2-topW&&bx-br<cx2+topW) hit=true;
+        // Tornado tip at gap edge, funnel 10 layers*7px=70px tall going AWAY from gap
+        // Tip narrow (w=6), wide end (w=32) at 70px away
+        // Top tornado: tip at p.topH, wide end at p.topH-70 (above, in pipe)
+        if(by-br<p.topH&&by+br>p.topH-70){
+          var dist=p.topH-by; // 0=tip, 70=wide end
+          var frac=Math.max(0,Math.min(1,dist/70));
+          var tw=6+26*frac+br;
+          if(bx>cx2-tw&&bx<cx2+tw) hit=true;
         }
-        // Bottom tornado: flipped, wide at bottom (botY+56 to botY), tip at botY
-        if(by+br>botY-56&&by-br<botY){
-          var depth2=botY-by; // 0=bottom(wide), 56=tip(narrow)
-          var frac2=Math.max(0,Math.min(1,depth2/56));
-          var botW=28*(1-frac2*0.75)+6;
-          if(bx+br>cx2-botW&&bx-br<cx2+botW) hit=true;
+        // Bottom tornado: tip at botY, wide end at botY+70 (below, in pipe)
+        if(by+br>botY&&by-br<botY+70){
+          var dist2=by-botY;
+          var frac2=Math.max(0,Math.min(1,dist2/70));
+          var bw=6+26*frac2+br;
+          if(bx>cx2-bw&&bx<cx2+bw) hit=true;
         }
       } else {
-        // Lightning cloud: centred at cx2, about 40px wide, sits just inside gap edge
-        // Cloud top hangs down ~40px from p.topH, cloud bottom hangs up ~40px from botY
-        var cloudTopY=p.topH-40, cloudBotY=botY+40;
-        var cloudW=22;
-        var inTopCloud=(by-br<p.topH&&by+br>cloudTopY&&bx+br>cx2-cloudW&&bx-br<cx2+cloudW);
-        var inBotCloud=(by+br>botY&&by-br<cloudBotY&&bx+br>cx2-cloudW&&bx-br<cx2+cloudW);
-        hit=inTopCloud||inBotCloud;
+        // Lightning: cloud centre is 18px outside gap edge, radius ~22
+        // Only deadly near the gap edge where bolt is
+        var topCloudEdge=p.topH-4;
+        var botCloudEdge=botY+4;
+        if(by-br<topCloudEdge&&by+br>topCloudEdge-44&&bx+br>cx2-22&&bx-br<cx2+22) hit=true;
+        if(by+br>botCloudEdge&&by-br<botCloudEdge+44&&bx+br>cx2-22&&bx-br<cx2+22) hit=true;
       }
     } else {
       // Fallback
